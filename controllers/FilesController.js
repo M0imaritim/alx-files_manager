@@ -100,6 +100,78 @@ class FilesController {
       return res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  static async getShow(req, res) {
+    const token = req.header('X-Token');
+    const fileId = req.params.id;
+
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    const userId = await redisClient.get(`auth_${token}`);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      const file = await dbClient.db.collection('files').findOne({
+        _id: new ObjectId(fileId),
+        userId: new ObjectId(userId),
+      });
+
+      if (!file) return res.status(404).json({ error: 'Not found' });
+
+      return res.status(200).json({
+        id: file._id.toString(),
+        userId: file.userId.toString(),
+        name: file.name,
+        type: file.type,
+        isPublic: file.isPublic,
+        parentId: file.parentId === 0 ? 0 : file.parentId.toString(),
+      });
+    } catch (error) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+  }
+
+  // 🔹 GET /files?parentId=...&page=...
+  static async getIndex(req, res) {
+    const token = req.header('X-Token');
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    const userId = await redisClient.get(`auth_${token}`);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const parentId = req.query.parentId || '0';
+    const page = Number.parseInt(req.query.page || '0', 10);
+    const limit = 20;
+    const skip = page * limit;
+
+    const query = { userId: new ObjectId(userId) };
+    query.parentId = parentId === '0' ? 0 : new ObjectId(parentId);
+
+    try {
+      const files = await dbClient.db
+        .collection('files')
+        .aggregate([
+          { $match: query },
+          { $skip: skip },
+          { $limit: limit },
+        ])
+        .toArray();
+
+      const result = files.map((file) => ({
+        id: file._id.toString(),
+        userId: file.userId.toString(),
+        name: file.name,
+        type: file.type,
+        isPublic: file.isPublic,
+        parentId: file.parentId === 0 ? 0 : file.parentId.toString(),
+      }));
+
+      return res.status(200).json(result);
+    } catch (err) {
+      console.error('Error in getIndex:', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }
 
 export default FilesController;
