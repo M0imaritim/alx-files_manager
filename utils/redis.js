@@ -1,52 +1,55 @@
-import { createClient } from 'redis';
+import redis from "redis";
 
 class RedisClient {
   constructor() {
-    this.client = createClient();
-    this.client.on('error', (err) => {
-      console.error('Redis Client Error:', err);
+    this.client = redis.createClient();
+
+    this.client.on("error", (err) => {
+      console.error("Redis Client Error:", err.message);
     });
 
-    this.client.connect()
-      .then(() => {
-        this.isReady = true;
-      })
-      .catch((err) => {
-        console.error('Redis Connection Error:', err);
-        this.isReady = false;
-      });
+    this.client.on("connect", () => {
+      this.connected = true;
+    });
   }
 
   isAlive() {
-    return this.client.isReady;
+    return this.client.connected === true;
   }
 
-  async get(key) {
-    try {
-      const value = await this.client.get(key);
-      return value;
-    } catch (err) {
-      console.error('Redis GET Error:', err);
-      return null;
-    }
-  }
-
-  async set(key, value, duration) {
-    try {
-      await this.client.set(key, value, {
-        EX: duration,
+  get(key) {
+    return new Promise((resolve) => {
+      this.client.get(key, (err, value) => {
+        if (err) {
+          console.error("Redis GET Error:", err.message);
+          resolve(null);
+        } else {
+          resolve(value);
+        }
       });
-    } catch (err) {
-      console.error('Redis SET Error:', err);
-    }
+    });
   }
 
-  async del(key) {
-    try {
-      await this.client.del(key);
-    } catch (err) {
-      console.error('Redis DEL Error:', err);
-    }
+  set(key, value, duration) {
+    return new Promise((resolve) => {
+      this.client.setex(key, duration, value, (err) => {
+        if (err) {
+          console.error("Redis SET Error:", err.message);
+        }
+        resolve();
+      });
+    });
+  }
+
+  del(key) {
+    return new Promise((resolve) => {
+      this.client.del(key, (err) => {
+        if (err) {
+          console.error("Redis DEL Error:", err.message);
+        }
+        resolve();
+      });
+    });
   }
 }
 
