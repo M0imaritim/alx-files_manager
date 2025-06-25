@@ -4,31 +4,25 @@ import { v4 as uuidv4 } from 'uuid';
 import { ObjectId } from 'mongodb';
 import mime from 'mime-types';
 import dbClient from '../utils/db';
+import fileQueue from '../utils/queue';
 import redisClient from '../utils/redis';
 
 class FilesController {
   static async postUpload(req, res) {
     const token = req.headers['x-token'];
 
-    if (!token) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
     try {
       const key = `auth_${token}`;
       const userId = await redisClient.get(key);
-
-      if (!userId) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
       const {
         name, type, parentId = 0, isPublic = false, data,
       } = req.body;
 
-      if (!name) {
-        return res.status(400).json({ error: 'Missing name' });
-      }
+      if (!name) return res.status(400).json({ error: 'Missing name' });
 
       const acceptedTypes = ['folder', 'file', 'image'];
       if (!type || !acceptedTypes.includes(type)) {
@@ -44,10 +38,7 @@ class FilesController {
           _id: new ObjectId(parentId),
         });
 
-        if (!parentFile) {
-          return res.status(400).json({ error: 'Parent not found' });
-        }
-
+        if (!parentFile) return res.status(400).json({ error: 'Parent not found' });
         if (parentFile.type !== 'folder') {
           return res.status(400).json({ error: 'Parent is not a folder' });
         }
@@ -62,9 +53,7 @@ class FilesController {
       };
 
       if (type === 'folder') {
-        const result = await dbClient.db
-          .collection('files')
-          .insertOne(fileDocument);
+        const result = await dbClient.db.collection('files').insertOne(fileDocument);
         return res.status(201).json({
           id: result.insertedId.toString(),
           userId,
@@ -87,10 +76,15 @@ class FilesController {
       fs.writeFileSync(localPath, fileContent);
 
       fileDocument.localPath = localPath;
+      const result = await dbClient.db.collection('files').insertOne(fileDocument);
 
-      const result = await dbClient.db
-        .collection('files')
-        .insertOne(fileDocument);
+      // ✅ Add to Bull queue after inserting into DB
+      if (type === 'image') {
+        await fileQueue.add({
+          userId,
+          fileId: result.insertedId.toString(),
+        });
+      }
 
       return res.status(201).json({
         id: result.insertedId.toString(),
@@ -252,6 +246,7 @@ class FilesController {
   static async getFile(req, res) {
     const fileId = req.params.id;
     const token = req.header('X-Token') || null;
+    const { size } = req.query;
 
     try {
       const file = await dbClient.db.collection('files').findOne({
@@ -271,12 +266,17 @@ class FilesController {
         return res.status(400).json({ error: 'A folder doesn\'t have content' });
       }
 
-      if (!file.localPath || !fs.existsSync(file.localPath)) {
+      let filePath = file.localPath;
+      if (size && ['100', '250', '500'].includes(size)) {
+        filePath = `${file.localPath}_${size}`;
+      }
+
+      if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'Not found' });
       }
 
       const mimeType = mime.lookup(file.name) || 'application/octet-stream';
-      const fileContent = fs.readFileSync(file.localPath);
+      const fileContent = fs.readFileSync(filePath);
 
       res.setHeader('Content-Type', mimeType);
       return res.status(200).send(fileContent);
