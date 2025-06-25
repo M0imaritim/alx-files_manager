@@ -30,10 +30,10 @@ class DBClient {
    */
   isAlive() {
     return (
-      this.connected &&
-      this.client &&
-      this.client.topology &&
-      this.client.topology.isConnected()
+      this.connected
+      && this.client
+      && this.client.topology
+      && this.client.topology.isConnected()
     );
   }
 
