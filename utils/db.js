@@ -12,16 +12,20 @@ class DBClient {
     this.db = null;
     this.connected = false;
 
-    this.client
-      .connect()
-      .then(() => {
-        this.db = this.client.db(this.dbName);
-        this.connected = true;
-      })
-      .catch((err) => {
-        console.error('MongoDB connection error:', err);
-        this.connected = false;
-      });
+    this.connect();
+  }
+
+  async connect() {
+    try {
+      await this.client.connect();
+      this.db = this.client.db(this.dbName);
+      this.connected = true;
+      console.log('Connected to MongoDB');
+    } catch (err) {
+      console.error('MongoDB connection error:', err);
+      this.connected = false;
+      this.db = null;
+    }
   }
 
   /**
@@ -43,6 +47,9 @@ class DBClient {
    */
   async nbUsers() {
     if (!this.db) {
+      await this.connect();
+    }
+    if (!this.db) {
       return 0;
     }
     return this.db.collection('users').countDocuments();
@@ -54,12 +61,14 @@ class DBClient {
    */
   async nbFiles() {
     if (!this.db) {
+      await this.connect();
+    }
+    if (!this.db) {
       return 0;
     }
     return this.db.collection('files').countDocuments();
   }
 }
 
-// Create and export an instance of DBClient
 const dbClient = new DBClient();
 export default dbClient;

@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 import fs from 'fs';
 import imageThumbnail from 'image-thumbnail';
 import dbClient from './utils/db';
-import fileQueue from './utils/queue';
+import { fileQueue, userQueue } from './utils/queue';
 
 fileQueue.process(async (job, done) => {
   const { fileId, userId } = job.data;
@@ -23,16 +23,30 @@ fileQueue.process(async (job, done) => {
     }
 
     const sizes = [500, 250, 100];
-    for (const size of sizes) {
-      const options = { width: size };
-      const thumbnail = await imageThumbnail(file.localPath, options);
-      const newPath = `${file.localPath}_${size}`;
-      fs.writeFileSync(newPath, thumbnail);
-    }
+    await Promise.all(
+      sizes.map(async (size) => {
+        const options = { width: size };
+        const thumbnail = await imageThumbnail(file.localPath, options);
+        const newPath = `${file.localPath}_${size}`;
+        fs.writeFileSync(newPath, thumbnail);
+      }),
+    );
 
     done();
   } catch (err) {
     console.error('Worker error:', err);
     done(err);
   }
+});
+
+userQueue.process(async (job) => {
+  const { userId } = job.data;
+  if (!userId) throw new Error('Missing userId');
+
+  const user = await dbClient.db.collection('users').findOne({
+    _id: new ObjectId(userId),
+  });
+
+  if (!user) throw new Error('User not found');
+  console.log(`Welcome ${user.email}!`);
 });

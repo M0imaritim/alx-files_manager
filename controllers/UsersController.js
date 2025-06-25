@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { ObjectId } from 'mongodb';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
+import { userQueue } from '../utils/queue';
 
 class UsersController {
   static async postNew(req, res) {
@@ -29,6 +30,9 @@ class UsersController {
       };
 
       const result = await dbClient.db.collection('users').insertOne(newUser);
+
+      // ✅ Add job to userQueue
+      await userQueue.add({ userId: result.insertedId.toString() });
 
       return res.status(201).json({
         id: result.insertedId.toString(),
