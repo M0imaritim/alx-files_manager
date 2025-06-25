@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import dbClient from '../utils/db.js';
+import dbClient from '../utils/db';
 
 class UsersController {
   /**
